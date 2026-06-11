@@ -1,137 +1,256 @@
-#!/usr/bin/env bash
-# ─────────────────────────────────────────────────────────────────────────────
-# setup.sh  —  macOS dependency setup (requires Homebrew)
-#
-# Run this ONCE after cloning the template. It will:
-#   1. Build GLFW from source → external/GLFW/
-#   2. Download GLM headers   → external/GLM/
-#   3. Generate GLAD loader   → external/GLAD/
-#
-# Prerequisites (all free):
-#   • Xcode Command Line Tools  →  xcode-select --install
-#   • Homebrew                  →  https://brew.sh
-#   • cmake (via brew)          →  brew install cmake
-#   • Python 3 (via brew)       →  brew install python3
-# ─────────────────────────────────────────────────────────────────────────────
-set -euo pipefail
+# opengl-template
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXT="$ROOT/external"
+Personal C++ / OpenGL 3.3 Core project starter template for macOS.
 
-GLFW_VERSION="3.4"
-GLM_VERSION="1.0.1"
+**Compiler:** clang / clang++ (via Xcode Command Line Tools)
+**Build system:** CMake 3.20+ with `CMakePresets.json`
+**C++ standard:** C++17
 
-# ─── Preflight checks ────────────────────────────────────────────────────────
-echo "══════════════════════════════════════════════════"
-echo "  OpenGL Template — macOS Dependency Setup"
-echo "══════════════════════════════════════════════════"
+---
 
-if ! command -v brew &>/dev/null; then
-    echo ""
-    echo "  Error: Homebrew not found."
-    echo "  Install it from https://brew.sh and re-run this script."
-    exit 1
-fi
-BREW="$(brew --prefix)"
-echo "  Homebrew prefix : $BREW"
+## Dependencies
 
-if ! command -v cmake &>/dev/null; then
-    echo "  cmake not found — installing via Homebrew..."
-    brew install cmake
-fi
-echo "  cmake           : $(cmake --version | head -1)"
+### GLFW
+**What it does:** GLFW (Graphics Library Framework) handles everything *outside* the OpenGL
+render loop — creating a window, creating an OpenGL context tied to that window, and processing
+keyboard/mouse/gamepad input events. Without it you would have to write platform-specific code
+(Cocoa on macOS, Win32 on Windows, X11 on Linux) just to get a window on screen.
 
-if ! command -v python3 &>/dev/null; then
-    echo "  python3 not found — installing via Homebrew..."
-    brew install python3
-fi
-echo "  python3         : $(python3 --version)"
-echo ""
+**Why a static library?** `libglfw3.a` is compiled once and baked into your binary.
+No `.dylib` needs to travel with your app; the binary is self-contained.
 
-# ─── 1. GLFW ─────────────────────────────────────────────────────────────────
-# We build from source (rather than copying from Homebrew) so we are guaranteed
-# to get the static archive (.a). Homebrew's glfw formula may only ship the
-# dynamic library (.dylib) depending on the formula version.
-echo "[1/3] Building GLFW $GLFW_VERSION static library..."
+**Version in this template:** 3.4
+**Where it lives:** `external/GLFW/include/GLFW/` (headers) and `external/GLFW/lib/libglfw3.a`
 
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT   # clean up on exit
+**macOS system frameworks GLFW links against** (added in `CMakeLists.txt`; nothing to install):
 
-curl -fsSL \
-    "https://github.com/glfw/glfw/archive/refs/tags/$GLFW_VERSION.tar.gz" \
-    -o "$TMP/glfw.tar.gz"
-tar -xf "$TMP/glfw.tar.gz" -C "$TMP"
+| Framework | Role |
+|-----------|------|
+| `OpenGL.framework` | The actual OpenGL implementation provided by macOS / the GPU driver |
+| `Cocoa.framework` | macOS native window creation and the event run-loop |
+| `IOKit.framework` | Keyboard, mouse, and gamepad/joystick input |
+| `CoreVideo.framework` | Display-link timing used for vsync (`glfwSwapInterval`) |
 
-cmake -S "$TMP/glfw-$GLFW_VERSION" -B "$TMP/glfw-build" \
-    -DCMAKE_BUILD_TYPE=Release  \
-    -DGLFW_BUILD_EXAMPLES=OFF   \
-    -DGLFW_BUILD_TESTS=OFF      \
-    -DGLFW_BUILD_DOCS=OFF       \
-    -DBUILD_SHARED_LIBS=OFF     \
-    -DCMAKE_C_COMPILER=clang    \
-    -G "Unix Makefiles"         \
-    > /dev/null 2>&1
+---
 
-cmake --build "$TMP/glfw-build" --parallel > /dev/null 2>&1
+### GLAD
+**What it does:** On desktop, OpenGL function addresses are not known at compile time — they
+must be queried from the driver at runtime. GLAD is a *loader generator*: it produces a small
+`.c` file plus a header that, at startup, walks through every `gl*` function you use and
+fetches its real address from the driver. After `gladLoadGLLoader(...)` returns you can call
+`glDrawArrays`, `glCreateShader`, etc. directly.
 
-# Copy headers and static lib into external/
-cp -r "$TMP/glfw-$GLFW_VERSION/include/GLFW/" "$EXT/GLFW/include/GLFW/"
-cp    "$TMP/glfw-build/src/libglfw3.a"         "$EXT/GLFW/lib/libglfw3.a"
+**Why a source file instead of a `.a`?** GLAD is generated per-platform and per-profile.
+The tiny `glad.c` file in `external/GLAD/src/` is compiled by CMake into an internal static
+library (`libglad.a`) automatically — you never touch it after `setup.sh` runs.
 
-trap - EXIT; rm -rf "$TMP"   # reset trap before next section
-echo "    ✓ headers    → external/GLFW/include/GLFW/"
-echo "    ✓ libglfw3.a → external/GLFW/lib/"
+**Profile used:** OpenGL 3.3 Core (compatible with all discrete GPUs made after ~2010 and
+Apple's Intel/AMD GPUs; the M-series chips also support it via translation).
 
-# ─── 2. GLM ──────────────────────────────────────────────────────────────────
-echo ""
-echo "[2/3] Downloading GLM $GLM_VERSION (header-only)..."
+**Where it lives:** `external/GLAD/include/` (two headers) and `external/GLAD/src/glad.c`
 
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+---
 
-curl -fsSL \
-    "https://github.com/g-truc/glm/archive/refs/tags/$GLM_VERSION.tar.gz" \
-    -o "$TMP/glm.tar.gz"
-tar -xf "$TMP/glm.tar.gz" -C "$TMP"
-cp -r "$TMP/glm-$GLM_VERSION/glm/" "$EXT/GLM/include/glm/"
+### GLM
+**What it does:** GLM (OpenGL Mathematics) is a header-only C++ math library designed to
+mirror GLSL's built-in types and functions. It gives you `glm::vec3`, `glm::mat4`,
+`glm::perspective`, `glm::lookAt`, `glm::translate`, and so on — exactly the types you need
+to build model/view/projection matrices and pass them as uniforms to your shaders.
 
-trap - EXIT; rm -rf "$TMP"
-echo "    ✓ glm/ headers → external/GLM/include/glm/"
+**Why header-only?** GLM is pure templates; there is nothing to compile. Drop the headers in
+and `#include <glm/glm.hpp>`.
 
-# ─── 3. GLAD ─────────────────────────────────────────────────────────────────
-# GLAD is a code generator. We use the PyPI 'glad' package (v0.1.x) to
-# generate an OpenGL 3.3 Core C loader, then commit the three output files.
-#
-# We use a throw-away venv so we never touch the system Python or Homebrew's
-# managed environment (PEP 668 blocks direct `pip install` on modern systems).
-echo ""
-echo "[3/3] Generating GLAD OpenGL 3.3 Core loader..."
+**Version in this template:** 1.0.1
+**Where it lives:** `external/GLM/include/glm/`
 
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+---
 
-# Create a self-contained venv just for the glad generator
-python3 -m venv "$TMP/venv"
-"$TMP/venv/bin/pip" install glad --quiet
+## Repository layout
 
-"$TMP/venv/bin/glad" \
-    --profile core   \
-    --api    gl=3.3  \
-    --generator c    \
-    --out-path "$TMP/glad-out"
+```
+opengl-template/
+├── external/
+│   ├── GLFW/
+│   │   ├── include/GLFW/        ← glfw3.h, glfw3native.h
+│   │   └── lib/
+│   │       └── libglfw3.a       ← pre-compiled static archive
+│   ├── GLAD/
+│   │   ├── include/
+│   │   │   ├── glad/glad.h      ← OpenGL function declarations
+│   │   │   └── KHR/khrplatform.h
+│   │   └── src/
+│   │       └── glad.c           ← compiled by CMake into internal libglad.a
+│   └── GLM/
+│       └── include/
+│           └── glm/             ← header-only math library (~1.5 MB of headers)
+├── include/                     ← YOUR project headers (.h / .hpp)
+├── src/
+│   └── main.cpp                 ← entry point
+├── CMakeLists.txt
+├── CMakePresets.json            ← pins clang/clang++; sets build dir to build/
+├── Makefile                     ← thin wrapper around cmake commands
+├── setup.sh                     ← one-time dependency fetcher (run once after clone)
+├── .clangd                      ← LSP config for clangd
+├── .clang-format                ← code style
+├── .gitignore
+└── README.md
+```
 
-cp "$TMP/glad-out/include/glad/glad.h"       "$EXT/GLAD/include/glad/"
-cp "$TMP/glad-out/include/KHR/khrplatform.h" "$EXT/GLAD/include/KHR/"
-cp "$TMP/glad-out/src/glad.c"                "$EXT/GLAD/src/"
+> **Why no full source repos in `external/`?**
+> Vendoring full repos (e.g. the entire GLFW or GLM git history) adds hundreds of megabytes
+> to the repository. Instead, `setup.sh` downloads only what is needed and places the compiled
+> outputs and headers into `external/`. The result is a repo well under 5 MB.
 
-trap - EXIT; rm -rf "$TMP"   # venv disappears with the temp dir
-echo "    ✓ glad.h          → external/GLAD/include/glad/"
-echo "    ✓ khrplatform.h   → external/GLAD/include/KHR/"
-echo "    ✓ glad.c          → external/GLAD/src/"
+---
 
-# ─── Done ────────────────────────────────────────────────────────────────────
-echo ""
-echo "══════════════════════════════════════════════════"
-echo "  All dependencies placed in external/"
-echo "  Next step:  make"
-echo "══════════════════════════════════════════════════"
+## Prerequisites
+
+### 1 — Xcode Command Line Tools
+Provides `clang`, `clang++`, `make`, `git`, and the macOS SDK (which includes the
+`OpenGL.framework`, `Cocoa.framework`, etc.).
+
+```bash
+xcode-select --install
+```
+
+A dialog will appear asking you to install; click **Install**. This is a one-time step per Mac.
+
+### 2 — Homebrew
+Package manager for macOS. If you don't have it:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+On **Apple Silicon (M1/M2/M3)** Homebrew installs to `/opt/homebrew`.
+On **Intel** it installs to `/usr/local`.
+
+### 3 — CMake
+
+```bash
+brew install cmake
+```
+
+### 4 — Python 3
+Required only by `setup.sh` to generate the GLAD loader (one-time only).
+
+```bash
+brew install python3
+```
+
+---
+
+## First-time setup
+
+After installing the prerequisites above, run `setup.sh` from the project root:
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+What it does, step by step:
+
+| Step | Action |
+|------|--------|
+| **1/3 GLFW** | Downloads GLFW 3.4 source, builds `libglfw3.a` with clang, copies headers + lib into `external/GLFW/` |
+| **2/3 GLM** | Downloads GLM 1.0.1 release tarball, extracts headers into `external/GLM/include/glm/` |
+| **3/3 GLAD** | Installs the `glad` Python package, generates an OpenGL 3.3 Core loader, copies the three output files into `external/GLAD/` |
+
+After `setup.sh` finishes, **commit `external/`** to git — you will never need to run `setup.sh`
+again unless you wipe the directory.
+
+```bash
+git add external/
+git commit -m "chore: add pre-built dependencies"
+```
+
+---
+
+## Building
+
+```bash
+make            # configure (Debug) + build  →  build/app
+make release    # configure (Release) + build
+make run        # build (Debug) + run immediately
+make clean      # rm -rf build/
+```
+
+Or drive CMake directly:
+
+```bash
+cmake --preset default          # configure; writes build/ and compile_commands.json
+cmake --build --preset default  # compile
+./build/app
+```
+
+Expected output when the window opens:
+```
+OpenGL 4.1 Metal - 88
+Renderer: Apple M2
+```
+*(The exact version string varies by GPU and macOS version.)*
+
+---
+
+## Starting a new project from this template
+
+1. Click **Use this template** on GitHub (creates your new repo without the commit history).
+2. Clone the new repo and run `./setup.sh`.
+3. In `CMakeLists.txt`, change `project(app …)` to your project name.
+4. Write your headers in `include/`, source files in `src/`.
+5. `make run`.
+
+---
+
+## Adding more dependencies
+
+Follow the same pattern used for GLFW (pre-compiled static library):
+
+```
+external/
+└── NEWLIB/
+    ├── include/    ← headers
+    └── lib/
+        └── libnewlib.a
+```
+
+Then in `CMakeLists.txt` before the `add_executable` block:
+
+```cmake
+add_library(newlib STATIC IMPORTED GLOBAL)
+set_target_properties(newlib PROPERTIES
+    IMPORTED_LOCATION             ${EXT}/NEWLIB/lib/libnewlib.a
+    INTERFACE_INCLUDE_DIRECTORIES ${EXT}/NEWLIB/include
+)
+```
+
+And add `newlib` to the `target_link_libraries` call.
+
+---
+
+## Notes
+
+### OpenGL deprecation on macOS
+Apple deprecated the OpenGL API in macOS 10.14 (Mojave, 2018) in favour of Metal.
+OpenGL still works correctly on all current macOS versions — the deprecation just
+means Apple will not add new OpenGL features. The `GL_SILENCE_DEPRECATION` definition
+in `CMakeLists.txt` and the `GLFW_OPENGL_FORWARD_COMPAT` hint in `main.cpp` silence
+the compiler and GLFW warnings about this.
+
+### Static (`.a`) vs dynamic (`.dylib` / `.so`)
+| | Static `.a` | Dynamic `.dylib` / `.so` |
+|-|-------------|--------------------------|
+| Linked at | Compile time — code baked into binary | Runtime — library loaded from disk |
+| Binary portability | Self-contained; no extra files needed | Binary needs the `.dylib` present at the same path |
+| Binary size | Larger | Smaller |
+| Rebuild needed for lib update | Yes | No (swap the `.dylib`) |
+
+This template uses **static** linking so the resulting binary runs anywhere on macOS
+without shipping extra files.
+
+### Why `GLFW_OPENGL_FORWARD_COMPAT` on macOS?
+macOS only exposes OpenGL 3.3+ through a **Core Profile** context, and that Core Profile
+*requires* the forward-compatibility flag. Without it, GLFW cannot create a 3.3 context
+on macOS and returns `nullptr`. The flag is guarded with `#ifdef __APPLE__` in `main.cpp`
+so it compiles correctly on Linux too.
