@@ -16,7 +16,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXT="$ROOT/external"
+EXT="$ROOT/../external"
 
 GLFW_VERSION="3.4"
 GLM_VERSION="1.0.1"
@@ -48,6 +48,9 @@ fi
 echo "  python3         : $(python3 --version)"
 echo ""
 
+# Pre setup
+mkdir -p "$EXT"
+
 # ─── 1. GLFW ─────────────────────────────────────────────────────────────────
 # We build from source (rather than copying from Homebrew) so we are guaranteed
 # to get the static archive (.a). Homebrew's glfw formula may only ship the
@@ -75,6 +78,9 @@ cmake -S "$TMP/glfw-$GLFW_VERSION" -B "$TMP/glfw-build" \
 cmake --build "$TMP/glfw-build" --parallel > /dev/null 2>&1
 
 # Copy headers and static lib into external/
+mkdir -p "$EXT/GLFW/include/GLFW/"
+mkdir -p "$EXT/GLFW/lib/"
+
 cp -r "$TMP/glfw-$GLFW_VERSION/include/GLFW/" "$EXT/GLFW/include/GLFW/"
 cp    "$TMP/glfw-build/src/libglfw3.a"         "$EXT/GLFW/lib/libglfw3.a"
 
@@ -93,6 +99,7 @@ curl -fsSL \
     "https://github.com/g-truc/glm/archive/refs/tags/$GLM_VERSION.tar.gz" \
     -o "$TMP/glm.tar.gz"
 tar -xf "$TMP/glm.tar.gz" -C "$TMP"
+mkdir -p "$EXT/GLM/include/glm/"
 cp -r "$TMP/glm-$GLM_VERSION/glm/" "$EXT/GLM/include/glm/"
 
 trap - EXIT; rm -rf "$TMP"
@@ -119,6 +126,10 @@ python3 -m venv "$TMP/venv"
     --api    gl=3.3  \
     --generator c    \
     --out-path "$TMP/glad-out"
+
+mkdir -p "$EXT/GLAD/include/glad/"
+mkdir -p "$EXT/GLAD/include/KHR/"
+mkdir -p "$EXT/GLAD/src/"
 
 cp "$TMP/glad-out/include/glad/glad.h"       "$EXT/GLAD/include/glad/"
 cp "$TMP/glad-out/include/KHR/khrplatform.h" "$EXT/GLAD/include/KHR/"
