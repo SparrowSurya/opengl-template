@@ -65,6 +65,16 @@ and `#include <glm/glm.hpp>`.
 
 ---
 
+### Dear ImGui
+**What it does:** Dear ImGui is a bloat-free graphical user interface library for C++. It is used to generate debug GUIs, overlays, and developer control panels in real-time. It runs inside your OpenGL render loop and draws elements dynamically.
+
+**Why a static library?** The core ImGui source files and GLFW/OpenGL3 backends are compiled by CMake directly into a static library (`libimgui.a`) to keep your binary self-contained.
+
+**Version in this template:** 1.92.8
+**Where it lives:** `external/imgui/` (core headers/sources) and `external/imgui/backends/` (GLFW and OpenGL3 backend files)
+
+---
+
 ## Repository layout
 
 ```
@@ -80,16 +90,21 @@ opengl-template/
 │   │   │   └── KHR/khrplatform.h
 │   │   └── src/
 │   │       └── glad.c           ← compiled by CMake into internal libglad.a
-│   └── GLM/
-│       └── include/
-│           └── glm/             ← header-only math library (~1.5 MB of headers)
+│   ├── GLM/
+│   │   └── include/
+│   │       └── glm/             ← header-only math library (~1.5 MB of headers)
+│   └── imgui/
+│       ├── backends/            ← GLFW and OpenGL3 backends
+│       └── *                    ← core source and header files
 ├── include/                     ← YOUR project headers (.h / .hpp)
 ├── src/
 │   └── main.cpp                 ← entry point
 ├── CMakeLists.txt
 ├── CMakePresets.json            ← pins clang/clang++; sets build dir to build/
 ├── Makefile                     ← thin wrapper around cmake commands
-├── setup.sh                     ← one-time dependency fetcher (run once after clone)
+├── setup/
+│   ├── linux.sh                 ← Linux dependency setup script (run once after clone)
+│   └── macos.sh                 ← macOS dependency setup script (run once after clone)
 ├── .clangd                      ← LSP config for clangd
 ├── .clang-format                ← code style
 ├── .gitignore
@@ -142,22 +157,30 @@ brew install python3
 
 ## First-time setup
 
-After installing the prerequisites above, run `setup.sh` from the project root:
-
+### macOS
+After installing the prerequisites, run the macOS setup script:
 ```bash
-chmod +x setup.sh
-./setup.sh
+chmod +x setup/macos.sh
+./setup/macos.sh
+```
+
+### Linux
+Run the Linux setup script (which uses `apt` or `pacman` to install system development packages, and then downloads and compiles local project libraries):
+```bash
+chmod +x setup/linux.sh
+./setup/linux.sh
 ```
 
 What it does, step by step:
 
 | Step | Action |
 |------|--------|
-| **1/3 GLFW** | Downloads GLFW 3.4 source, builds `libglfw3.a` with clang, copies headers + lib into `external/GLFW/` |
-| **2/3 GLM** | Downloads GLM 1.0.1 release tarball, extracts headers into `external/GLM/include/glm/` |
-| **3/3 GLAD** | Installs the `glad` Python package, generates an OpenGL 3.3 Core loader, copies the three output files into `external/GLAD/` |
+| **1/4 GLFW** | Downloads GLFW 3.4 source, builds `libglfw3.a` with clang, copies headers + lib into `external/GLFW/` |
+| **2/4 GLM** | Downloads GLM 1.0.1 release tarball, extracts headers into `external/GLM/include/glm/` |
+| **3/4 GLAD** | Installs the `glad` Python package, generates an OpenGL 3.3 Core loader, copies the three output files into `external/GLAD/` |
+| **4/4 ImGui** | Downloads Dear ImGui 1.92.8 release, extracts core files and backends into `external/imgui/` |
 
-After `setup.sh` finishes, **commit `external/`** to git — you will never need to run `setup.sh`
+After the setup finishes, **commit `external/`** to git — you will never need to run the setup script
 again unless you wipe the directory.
 
 ```bash
@@ -185,11 +208,14 @@ cmake --build --preset default  # compile
 ```
 
 Expected output when the window opens:
-```
-OpenGL 4.1 Metal - 88
-Renderer: Apple M2
-```
-*(The exact version string varies by GPU and macOS version.)*
+- The console logs the detected driver profile, e.g.:
+  ```
+  OpenGL 4.1 Metal - 88
+  Renderer: Apple M2
+  ```
+- A window opens with the large centered text **"Hello OpenGL"** rendered directly onto the viewport background.
+- An interactive **"Control Panel"** window is displayed. Typing in the input box updates the centered text in real-time.
+- Pressing **`F5`** toggles the visibility of the Control Panel window.
 
 ---
 

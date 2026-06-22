@@ -30,6 +30,20 @@ set_target_properties(glfw PROPERTIES
 add_library(glm INTERFACE)
 target_include_directories(glm INTERFACE ${EXT}/GLM/include)
 
+# ─── ImGui (static library) ──────────────────────────────────────────────────
+file(GLOB IMGUI_SOURCES ${EXT}/imgui/*.cpp)
+list(APPEND IMGUI_SOURCES
+    ${EXT}/imgui/backends/imgui_impl_glfw.cpp
+    ${EXT}/imgui/backends/imgui_impl_opengl3.cpp
+)
+add_library(imgui STATIC ${IMGUI_SOURCES})
+target_include_directories(imgui PUBLIC
+    ${EXT}
+    ${EXT}/imgui
+    ${EXT}/GLFW/include
+    ${EXT}/GLAD/include
+)
+
 # ─── Executable ──────────────────────────────────────────────────────────────
 file(GLOB_RECURSE SOURCES ${SRC_DIR}/*.cpp)
 
@@ -41,6 +55,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glad
     glfw
     glm
+    imgui
 )
 
 # ─── Platform-specific system libraries ──────────────────────────────────────
